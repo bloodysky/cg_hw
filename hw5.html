@@ -1,0 +1,227 @@
+
+<!DOCTYPE html>
+
+<html>
+
+<head>
+<style>
+#info {
+  position: absolute;
+  top: 2%;
+  width: 100%;
+  padding: 10px;
+  text-align: center;
+  color: #ffff00
+}
+
+body {
+  overflow: hidden;
+}
+</style>
+</head>
+
+<body> 
+<div id="info">
+  hw5-1 Basic GLSL <br>
+  
+  <select id='coords'>
+  <option value="obj" selected>Object Coordinate</option>
+  <option value="world">World Coordinate</option>
+  <option value="eye">Eye Coordinate</option>
+  </select>
+  
+  <select id='shading'>
+  <option value='perVertex' selected> Per Vertex</option>
+  <option value='perPixel'> Per Pixel </option>
+  </select>
+
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/109/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+<script src="https://raw.githack.com/mrdoob/three.js/dev/examples/js/geometries/TeapotBufferGeometry.js"></script>
+
+<!--
+<script id="myvertexShader" type="x-shader/x-vertex">
+   varying vec4 myeyepos;
+   void main(){
+	gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+	myeyepos = modelViewMatrix * vec4(position, 1.0);
+   }
+</script>
+<script id = "myFragmentShader" type = "x-shader/x-fragment">
+   varying vec4 myeyepos;
+   void main(){
+	vec3 mycoler;
+	if(mycoler.x > 0.0)
+		mycoler = vec3(1,0,0);
+	else
+		mycoler = vec3(0,1,0);
+	gl_FragColor = vec4(mycoler, 1.0);
+   }
+   
+</script>
+-->
+
+<script id="myVertexShader" type="x-shader/x-vertex">
+  uniform int shading;
+  uniform int coordinate;
+  varying vec3 color;
+  
+  varying vec4 myeyepos;
+  void perVertexShading(vec3 objpos, vec3 worldpos) {
+    if (coordinate == 0) {
+  	  if (objpos.x > 0.0) 
+    	color = vec3 (1,1,1);
+      else
+    	color = vec3 (0,0,0);
+    } else if (coordinate == 1) {
+  	  if (worldpos.x > 0.0) 
+    	color = vec3 (1,1,1);
+      else
+    	color = vec3 (0,0,0);    	
+    }
+  }
+
+  // your homework
+  void perPixelShading(vec3 objpos, vec3 myeyepos) {
+	if (coordinate == 0) {
+  	  if (objpos.x > 0.0) 
+    	color = vec3 (1,1,1);
+      else
+    	color = vec3 (0,0,0);
+    } else if (coordinate == 1) {
+  	  if (myeyepos.x > 0.0) 
+    	color = vec3 (1,1,1);
+      else
+    	color = vec3 (0,0,0);    	
+    }
+  }
+  
+  void main() {
+	gl_Position = projectionMatrix* modelViewMatrix * vec4( position, 1.0);
+    vec4 worldpos = modelMatrix * vec4 (position, 1.0);
+    vec4 myeyepos = modelViewMatrix * vec4(position, 1.0);
+  	if (shading == 0)  // per-vertex shading
+    	perVertexShading(position, worldpos.xyz);
+    else
+    	perPixelShading(position, myeyepos.xyz);
+  }
+</script>
+
+<script id="myFragmentShader" type="x-shader/x-fragment">
+  uniform int shading;
+  varying vec3 color;
+  varying vec4 myeyepos;
+  
+	void main() {
+		if(shading == 0)
+			gl_FragColor = vec4 (color, 1.0);
+		else {
+			vec3 mycoler;
+			if(mycoler.x > 0.0)
+				mycoler = vec3(1,0,0);
+			else
+				mycoler = vec3(0,1,0);
+			gl_FragColor = vec4(mycoler, 1.0);
+		}
+	}
+</script>
+
+<script>
+
+$('#coords').change( function() {
+	console.log ( $(this).val() );
+	let objType = $(this).val();
+	if (objType === 'obj') {
+		teapotMaterial.uniforms.coordinate.value = 0;
+	} else if (objType === 'world') {
+		teapotMaterial.uniforms.coordinate.value = 1;
+	} else if (objType === 'eye') {
+		teapotMaterial.uniforms.coordinate.value = 2;
+	}
+});
+$('shading').change( function() {
+	console.log ( $(this).val() );
+	let objType = $(this).val();
+	if(objType === 'perVertex') {
+		teapotMaterial.uniforms.coordinate.value = 0;
+	} else if (objType === 'perPixel') {
+		teapotMaterial.uniforms.coordinate.value = 1;
+	}
+});
+
+
+var scene, renderer, camera;
+var movingTeapot;
+var angle = 0;
+var teapotMaterial;
+
+
+init();
+animate();
+
+function init() {
+  var width = window.innerWidth;
+  var height = window.innerHeight;
+
+  renderer = new THREE.WebGLRenderer({
+    antialias: true
+  });
+  renderer.setSize(width, height);
+  renderer.setClearColor(0x888888);
+  document.body.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+
+  camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 10000);
+  camera.position.z = 200;
+  camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+  var gridXZ = new THREE.GridHelper(200, 20, 'red', 'white');
+  scene.add(gridXZ);
+
+  pointLight = new THREE.PointLight(0xffffff);
+  pointLight.position.set(200, 300, 200);
+  scene.add(pointLight);
+  var ambientLight = new THREE.AmbientLight(0x111111);
+  scene.add(ambientLight);
+
+  /////////////////////////////////////////////////////////////////
+
+
+  teapotMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      lightpos: {type:'v3', value: new THREE.Vector3(0, 30, 20) },
+	  shading: {type:'i', value: 0},
+      coordinate: {type:'i', value: 0},
+	},
+    vertexShader: document.getElementById('myVertexShader').textContent,
+    fragmentShader: document.getElementById('myFragmentShader').textContent
+  });
+
+  movingTeapot = new THREE.Mesh (new THREE.TeapotBufferGeometry(10), teapotMaterial);
+  scene.add (movingTeapot);
+  
+}
+
+function animate() {
+  angle += 0.01;
+
+  // update the uniform variable
+  
+  if (movingTeapot !== undefined) {
+	movingTeapot.position.set (70*Math.cos(angle), 0, 70*Math.sin(angle));
+  }
+  
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+
+}
+
+</script>
+</body>
+
+</html>

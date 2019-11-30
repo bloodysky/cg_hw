@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body {
+	overflow: hidden
+}
+</style>
+</head>
+
+<body>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/107/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
+<script src="https://raw.githack.com/jyunming-chen/tutsplus/master/js/KeyboardState.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+<button id="1" style="width:20%">Toggle Turn</button>
+<button id="2" style="width:20%">switch</button>
+
+<script>
+
+var renderer, scene, camera;
+var controls, cube, circle;
+var angle = 0, circleangle = 0;  // initialization IMPORTANT!
+var keyboard;
+var c = new THREE.Clock();
+var turn = false;
+var change = 0;
+init();
+animate();
+
+$("#1").click(function() {
+  turn = !turn;
+  if (change == 1 &&turn == true){
+		setTimeout(move, 1000);
+	}
+});
+
+$("#2").click(function() {
+	change += 1;
+	if(change >= 3){
+		circle.visible = false;
+		cube.visible = true;
+		change = 0;
+	}
+	else if (change == 1 &&turn == true){
+			circle.visible = false;
+			setTimeout(move, 1000);
+	}
+	else if (change == 2 &&turn == true){
+		setTimeout(move, 1000);
+		circle.visible = true;
+		cube.visible = false;
+		angle = 6  * Math.PI / 180;
+		cube.rotation.y -= angle;
+		circleangle = -cube.rotation.y;
+		console.log(circle.angle);
+	}
+	
+});
+function init () {
+	
+	renderer = new THREE.WebGLRenderer();
+	document.body.appendChild (renderer.domElement);
+	var width = window.innerWidth;
+	var height = window.innerHeight;
+	renderer.setSize (width, height);
+	
+	renderer.setClearColor (0x888888);
+	
+	scene = new THREE.Scene();
+	var grid = new THREE.GridHelper(20,20, 0xaaaa00, 0x333333);
+	scene.add (grid);
+	var axes = new THREE.AxisHelper (5);
+	scene.add (axes);
+	
+	camera = new THREE.PerspectiveCamera (35, width/height, 1, 100);
+	camera.position.y = 16;
+	camera.position.z = 40;
+	camera.lookAt (new THREE.Vector3(0,0,0));
+	
+	controls = new THREE.OrbitControls(camera, renderer.domElement);
+	
+	window.addEventListener('resize', onWindowResize, false);
+	///////////////////////////////////////////////////////////////
+	var geometry = new THREE.CircleGeometry( 10, 30, Math.PI, 0 );
+	var material = new THREE.MeshBasicMaterial( { color: 0xffffff, side: THREE.DoubleSide} );
+	circle = new THREE.Mesh( geometry, material );
+	scene.add( circle );
+	circle.rotation.x = Math.PI/2;
+	var cubeGeometry = new THREE.BoxGeometry (1,1,10);
+	var cubeMaterial = new THREE.MeshNormalMaterial();
+	cube = new THREE.Object3D();
+	var hn = new THREE.Mesh (cubeGeometry, cubeMaterial);
+	cube.add(hn);
+	hn.position.z = -5;
+	scene.add (cube);
+	keyboard = new KeyboardState();
+	
+	//setTimeout(move, 1000);
+}
+function move(){
+	if(change == 1 &&turn == true)
+		setTimeout(move, 1000);
+	angle = 6  * Math.PI / 180;
+	cube.rotation.y -= angle;
+
+}
+
+function onWindowResize() {
+  
+  var width  = window.innerWidth;
+  var height = window.innerHeight;
+  camera.aspect = width / height;
+  camera.updateProjectionMatrix();
+  renderer.setSize(width, height);
+	
+}
+
+function animate() {
+	keyboard.update();
+	var s = c.getDelta();
+	
+	
+	if (turn){
+		if(change == 0){
+			
+			angle = s * 6 * Math.PI / 180;
+			cube.rotation.y -= angle;
+		}
+		else if (change == 2){
+			circleangle += s * 6 * Math.PI / 180;
+			circle.geometry.dispose();
+			var tmp = new THREE.CircleGeometry(10, 30, -Math.PI/2, circleangle);
+			circle.geometry = tmp;
+		}
+	}
+	controls.update();
+	requestAnimationFrame(animate);
+	render();
+	
+}
+
+function render() {
+	
+	renderer.render(scene, camera);
+	
+}
+
+</script>
+</body>
+
+</html>

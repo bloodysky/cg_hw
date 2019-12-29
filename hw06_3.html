@@ -1,0 +1,707 @@
+
+<!DOCTYPE html>
+
+<html>
+<body> 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/109/three.min.js"></script>
+<script src="https://threejs.org/build/three.min.js"></script>
+<script src="https://threejs.org/examples/js/controls/OrbitControls.js"></script>
+<script src="https://code.jquery.com/jquery-2.1.4.min.js"></script>
+<script src="https://raw.githack.com/mrdoob/three.js/dev/examples/js/loaders/MTLLoader.js"></script>
+<script src="https://raw.githack.com/mrdoob/three.js/dev/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://raw.githack.com/mrdoob/three.js/dev/examples/js/geometries/TeapotBufferGeometry.js"></script>
+<script src="https://raw.githack.com/mrdoob/three.js/master/examples/js/utils/BufferGeometryUtils.js"></script>
+<script id="myVertexShader-mono" type="x-shader/x-vertex">
+  varying vec2 vUv; 
+  void main() { 
+     gl_Position = projectionMatrix* modelViewMatrix * vec4( position, 1.0); 
+     vUv = uv; 
+  }
+</script>
+<script id="myFragmentShader-mono" type="x-shader/x-fragment">
+  uniform sampler2D texture; 
+  varying vec2 vUv; 
+  
+  vec3 rgb2hsv(vec3 c) {
+    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+
+    float d = q.x - min(q.w, q.y);
+    float e = 1.0e-10;
+    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+  }
+  vec3 hsv2rgb(vec3 c) {
+    vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+    return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+  }
+  
+  void main() { 
+  	vec3 color = texture2D (texture, vUv).rgb;
+  	vec3 hh = rgb2hsv (color);
+  	hh.y = 0.0; 
+  	vec3 cc = hsv2rgb (hh);
+  	gl_FragColor = vec4 (cc, 1.0); 
+  }
+</script>
+
+<script id="myVertextoonShader" type="x-shader/x-vertex">
+	uniform vec3 lightpos;
+	varying float ndotl;
+  varying vec3 lightdir;
+  varying vec3 eyenorm;
+  
+  void main() {
+	gl_Position = projectionMatrix* modelViewMatrix * vec4( position, 1.0);
+		
+    vec4 eyepos = modelViewMatrix * vec4 (position, 1.0);
+    vec4 lighteye = viewMatrix * vec4 (lightpos, 1.0);
+    lightdir = lighteye.xyz - eyepos.xyz;
+    eyenorm = normalMatrix * normal;
+  }
+</script>
+<script id="myFragmenttoonShader" type="x-shader/x-fragment">
+	varying float ndotl;
+  varying vec3 lightdir;
+  varying vec3 eyenorm;
+  
+	void main() {
+		float nn = dot (normalize(lightdir), normalize(eyenorm));
+    if (nn > 0.8) {
+			nn= 1.0;
+		} else if (nn > 0.6) {
+			nn = 0.6;
+		} else {
+			nn = 0.2;
+		}
+		vec3 color = vec3(33./255.,111./255.,237./255.);
+		color = color*nn;
+		gl_FragColor = vec4 (color, 1.0);
+	}
+</script>
+
+<script id="vsNormal" type="x-shader/x-vertex">
+  varying vec3 vNormal;
+  void main() { 
+  	gl_Position = projectionMatrix* modelViewMatrix * vec4( position, 1.0); 
+    vNormal = normalMatrix*normal;
+  }
+</script>
+<script id="fsNormal" type="x-shader/x-fragment">
+  varying vec3 vNormal; // [-1,1]^3
+  void main() {    
+  	vec3 color = (normalize(vNormal)+1.0)/2.; // [0,1]^3
+  	gl_FragColor = vec4 (color,1);
+  }
+</script>
+<script id="vsFilter" type="x-shader/x-vertex">
+  varying vec2 vUv; 
+  void main() { 
+    gl_Position = projectionMatrix* modelViewMatrix * vec4( position, 1.0); 
+    vUv = uv; 
+  }
+</script>
+<script id="fsFilter" type="x-shader/x-fragment">
+  uniform sampler2D texture; 
+  uniform int imageSize;
+  varying vec2 vUv; 
+  void main() { 
+    float step_w = 1.0/float(imageSize); 
+    float step_h = 1.0/float(imageSize); 
+
+	float kernel[9]; 
+    kernel[0] = kernel[2] = kernel[6] = kernel[8] = 0.0/1.0; 
+    kernel[1] = kernel[3] = kernel[5] = kernel[7] = 1.0/1.0; 
+    kernel[4] = -4.0/1.0; 
+    vec2 offset[9]; 
+    offset[0]=vec2(-step_w, -step_h); 
+    offset[1]=vec2(0.0, -step_h); offset[2]= vec2(step_w, -step_h), 
+    offset[3]=vec2(-step_w, 0.0), offset[4]=vec2(0.0, 0.0), offset[5]=vec2(step_w, 0.0), 
+    offset[6]=vec2(-step_w, step_h), offset[7]=vec2(0.0, step_h), offset[8]=vec2(step_w, step_h); 
+  
+    vec3 sum= vec3(0.0); 
+ 	for (int i=0 ; i < 9; i++) { 
+       vec3 tmp=texture2D (texture, vUv+offset[i]).rgb; 
+       sum += tmp*kernel[i]; 
+    }
+    if ((sum.r+sum.g+sum.b)/3.0 < 0.1) // if close to (0,0,0)
+  	   discard;
+    else 
+  	   gl_FragColor = vec4 (0,0,0, 1.0); 
+  }
+</script>
+
+<script id="vsCut" type="x-shader/x-vertex">
+  varying vec2 vUv; 
+  void main() { 
+    gl_Position = projectionMatrix* modelViewMatrix * vec4( position, 1.0); 
+    vUv = uv; 
+  }
+</script>
+<script id="fsCut" type="x-shader/x-vertex">
+  uniform sampler2D texture; 
+  varying vec2 vUv;
+  void main() {
+  	vec3 color = texture2D (texture, vUv).rgb;
+  	if (color.r > 0.95 && color.g > 0.95 && color.b < 0.05)  // close to (1,1,0)
+  	   discard;
+  	else
+  		gl_FragColor = vec4 (color, 1);
+  }
+</script>
+
+<script id="vs-normalmap" type="x-shader/x-vertex">
+    uniform vec3 lightpos;
+	uniform int which;
+	attribute vec4 tangent;
+	varying vec2 vUv;
+	varying vec3 vTangent;
+	varying vec3 vBitangent;
+	varying vec3 vNormal;
+	varying vec3 vLL;
+	void main() {
+	  vec4 vWorldpos = modelMatrix * vec4( position, 1.0 ) ;
+	  vec2 myrepeat = vec2 (1.0, 1.0);
+	  vUv = vec2 ((uv.s + float(which))/3., uv.t); 
+      gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+
+        vNormal = normalMatrix * normal ;
+		vTangent = normalMatrix * tangent.xyz ;
+		vBitangent = cross( vNormal, vTangent ) ;
+		vLL = normalMatrix * (lightpos - vWorldpos.xyz);
+	}
+</script>
+	
+<script id='fs-normalmap' type="x-shader/x-vertex">
+	
+	uniform sampler2D tNormal;
+	varying vec2 vUv;
+	varying vec3 vTangent;
+	varying vec3 vBitangent;
+	varying vec3 vNormal;
+	varying vec3 vLL;
+	void main() {
+		
+		vec3 normalTex = texture2D (tNormal, vUv).xyz * 2.0 - 1.0;
+		normalTex.xy *= 6.0;    // exaggerate the normal deviation
+		normalTex = normalize( normalTex );
+		mat3 tsb = mat3( normalize( vTangent ), normalize( vBitangent ), normalize( vNormal ) );
+		vec3 finalNormal = tsb * normalTex;
+		float ndotl = dot (normalize (vLL), normalize (finalNormal));
+		gl_FragColor = vec4( vec3(ndotl), 1 );
+	}
+</script>
+
+<script>
+javascript:(function(){var script=document.createElement('script');script.onload=function(){var stats=new Stats();document.body.appendChild(stats.dom);requestAnimationFrame(function loop(){stats.update();requestAnimationFrame(loop)});};script.src='https://mrdoob.github.io/stats.js/build/stats.min.js';document.head.appendChild(script);})()
+
+var scene, renderer, camera;
+var light, light2, angle=0;
+var material_shh;
+var sceneRTT, cameraRTT;
+var planeXX;
+var subject,subjectClone;
+var camera1;
+var which = 0;
+
+init();
+animate();
+
+function init() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  
+  renderer = new THREE.WebGLRenderer({
+    antialias: true
+  });
+  renderer.setSize(width, height);
+  document.body.appendChild(renderer.domElement);
+  renderer.setClearColor(0x888888);
+  
+  renderer.autoClear = false;
+  
+  camera = new THREE.PerspectiveCamera(45, width / height, 1, 1000);
+  camera.position.set(250, 250, 250);
+  camera.lookAt(new THREE.Vector3(0, 0, 0));
+  
+  let controls = new THREE.OrbitControls(camera, renderer.domElement);
+
+
+  
+  function onWindowResize() {
+  	camera.aspect = window.innerWidth / window.innerHeight;
+  	camera.updateProjectionMatrix();
+  	renderer.setSize(window.innerWidth, window.innerHeight);
+  }
+
+  light3 = new THREE.DirectionalLight('0x333333',0.2);
+  light3.position.set(0, 200,200);
+  light3.penumbra = 1;
+  light3.castShadow = false;
+
+  scene = new THREE.Scene();
+  sceneGrey = new THREE.Scene();
+  let floor = new THREE.Mesh (new THREE.PlaneGeometry (200,200), new THREE.MeshPhongMaterial());
+  floor.rotation.x = -Math.PI/2;
+  
+  var geometry = new THREE.BoxBufferGeometry( 145, 1, 110 );
+  var material = new THREE.MeshLambertMaterial( {color: 'yellow'} );
+  var cube = new THREE.Mesh( geometry, material );
+  cube.position.set(0,45,0);
+  
+  var geometry = new THREE.CylinderBufferGeometry( 5, 5, 45, 32 );
+  var material = new THREE.MeshPhongMaterial( {color: 0x888888} );
+  var cylinder = new THREE.Mesh( geometry, material );
+  cylinder.position.set(40,22.5,40);
+  
+  var cylinder1 = new THREE.Mesh( geometry, material );
+  cylinder1.position.set(-40,22.5,40);
+  scene.add( cylinder1 );
+  
+  var cylinder2 = new THREE.Mesh( geometry, material );
+  cylinder2.position.set(40,22.5,-40);
+  scene.add( cylinder2 );
+  
+  var cylinder3 = new THREE.Mesh( geometry, material );
+  cylinder3.position.set(-40,22.5,-40);
+  scene.add( cylinder3 );
+
+  let loader = new THREE.TextureLoader();
+  loader.crossOrigin = '';
+  texture = loader.load('https://i.imgur.com/A0dsnoc.jpg');
+  alpha = loader.load('https://i.imgur.com/A0dsnoc.jpg');
+  
+  var texMat = new THREE.MeshPhongMaterial({
+    map: texture, alphaMap: alpha,
+    transparent: true, side: THREE.DoubleSide
+  });
+  
+  var geometry = new THREE.PlaneGeometry( 200, 150, 32 );
+  var material = new THREE.MeshLambertMaterial( {color: '#d6a12e', side: THREE.DoubleSide} );
+  
+  var plane = new THREE.Mesh( geometry, material );
+  plane.position.set(0,75,-100);
+  
+  
+  var plane1 = new THREE.Mesh( geometry, material );
+  plane1.rotation.y = Math.PI/2;
+  plane1.position.set(-100,75,0);
+  
+  var geometry = new THREE.CylinderGeometry( 6, 6, 12.5, 20, 1, true);
+  var cylinder0 = new THREE.Mesh( geometry, texMat );
+  cylinder0.position.set(-20,53,10);
+  
+  let tea = buildModel();
+  
+  sceneGrey.add (floor, cube, cylinder, cylinder1, cylinder2, cylinder3,tea, cylinder0, plane1, plane,light3);
+    
+  sceneColor = new THREE.Scene();
+  sceneColor.add( Teapot() );
+  
+  renderTarget = new THREE.WebGLRenderTarget (width, height);  // full-size RT
+
+  light = new THREE.PointLight( 0xffffff, 1);
+  light.position.set( 50, 50, 50 );
+  light2 = new THREE.PointLight( 0xffffff, 1);
+  
+  sceneColor.add (light);
+  sceneColor.add (new THREE.PointLightHelper (light,5))
+  sceneGrey.add (light2);
+  
+   var uniforms = {
+    texture: {
+      type: 't',
+      value: renderTarget.texture
+    } ,
+  };
+
+  scene0 = new THREE.Scene();
+  camera0 = new THREE.OrthographicCamera (0, width, height, 0,-10,100);
+  
+  var vertShader = document.getElementById('myVertexShader-mono').textContent;
+  var fragShader = document.getElementById('myFragmentShader-mono').textContent;
+  shaderMaterial = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader: vertShader,
+    fragmentShader: fragShader,
+    
+    depthTest: false,
+    depthWrite: false 
+  });
+  
+  window.addEventListener('resize', onWindowResize, false);
+  
+var material_shh_normal = new THREE.ShaderMaterial({
+   side: THREE.BackSide,
+    vertexShader: document.getElementById('vsNormal').textContent,
+    fragmentShader: document.getElementById('fsNormal').textContent
+  });
+
+  scene0 = new THREE.Scene();
+  subject = new THREE.Mesh (new THREE.TeapotBufferGeometry(10),
+  material_shh_normal);
+  subject.position.set(0,50,0)
+  scene0.add (subject);
+  camera1 = new THREE.OrthographicCamera (-20,20,20,-20,-200,200);
+  
+  var uniforms = {
+    imageSize: {
+    	type: 'i',
+      value: renderTarget.width
+    },
+    texture: {
+    	type: 't',
+      value: renderTarget.texture
+    }
+  };
+  material_shh = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader: document.getElementById('vsFilter').textContent,
+    fragmentShader: document.getElementById('fsFilter').textContent
+  });
+
+  sceneRTT = new THREE.Scene();
+  cameraRTT = new THREE.OrthographicCamera(-50, 50, 50, -50, -10, 10);
+  var bs = new THREE.Mesh(new THREE.PlaneGeometry(100,100), material_shh);
+  sceneRTT.add(bs);
+  
+  sceneRegular = new THREE.Scene();
+  subjectClone = subject.clone();
+  subjectClone.material = new THREE.MeshPhongMaterial();
+  sceneRegular.add(subjectClone);
+  
+  var pointLight = new THREE.PointLight(0xffffff,1);
+  pointLight.position.set(0, 300, 200);
+  sceneRegular.add(pointLight);
+  var ambientLight = new THREE.AmbientLight(0x555555,1);
+  sceneRegular.add(ambientLight);
+
+  renderTarget_whole = new THREE.WebGLRenderTarget( 512,512);
+   
+   cutoutShaderMat = new THREE.ShaderMaterial ({
+    uniforms: {
+       texture: {type:'t', value: renderTarget_whole.texture}
+    },
+    vertexShader: document.getElementById('vsCut').textContent,
+    fragmentShader: document.getElementById('fsCut').textContent
+   });
+   
+   planeXX = new THREE.Mesh (new THREE.PlaneGeometry (30,30), cutoutShaderMat);
+   sceneColor.add (planeXX);
+   planeXX.position.set(-25,24,-25);
+  
+   scene.add (new THREE.GridHelper (200,20,'red','white'));
+
+  var plane0 = new THREE.Mesh (new THREE.PlaneGeometry(width, height), shaderMaterial);
+  scene.add (plane0);
+  plane0.position.set (width/2, height/2, 0);
+  myPhoto();
+ 
+}
+
+function myPhoto(){
+  
+  var geometry = new THREE.PlaneBufferGeometry( 70,70 );
+  THREE.BufferGeometryUtils.computeTangents(geometry);
+  
+  let loader = new THREE.TextureLoader();
+  loader.crossOrigin = ''; 
+    let texture = loader.load('https://i.imgur.com/dBEQcn8.jpg', function (tex) {
+  	console.log (tex.image.width + ', ' + tex.image.height);
+  	 texture.wrapS = THREE.RepeatWrapping;
+  	shaderMaterial.uniforms.imageSize.value = tex.image.width;
+  	shaderMaterial.uniforms.tNormal.value= tex;
+  }); 
+  
+	var uniforms = {
+		imageSize: {
+		  type: 'v2',
+		  value: 512
+		},
+		tNormal: {
+		  type: 't',
+		  value: null
+		},
+		lightpos: {
+		  type: 'v3',
+		  value: new THREE.Vector3()
+		},
+		   which: {
+		  type: 'i',
+		  value: 0
+		}
+  };
+  
+  var vertShader = document.getElementById('vs-normalmap').textContent;
+  var fragShader = document.getElementById('fs-normalmap').textContent;
+  
+  shaderMaterial = new THREE.ShaderMaterial({
+    uniforms: uniforms,
+    vertexShader: vertShader,
+    fragmentShader: fragShader
+  });
+  let mesh = new THREE.Mesh (geometry, shaderMaterial)
+  sceneColor.add (mesh);
+  mesh.position.set(0,100,-99);
+	
+  function incWhich() {
+  	which += 1;
+  	shaderMaterial.uniforms.which.value = which;
+  	setTimeout (incWhich, 1000);
+  }
+  setTimeout (incWhich, 0);
+}
+
+function Teapot() {
+	
+	let alpha = 0.25, beta = 0.5, y = 0.3, b = 0.55;
+    let kblue = new THREE.Vector3(0,0,b);
+	let kyellow = new THREE.Vector3(y,y,0);
+	let kd = new THREE.Vector3(33/255, 111/255, 237/255); //RGB
+	let kcool = kd.clone().multiplyScalar(alpha).add(kblue); //kcool =kd*alpha + kblue
+	let kwarm = kd.clone().multiplyScalar(beta).add(kyellow); //kwarm =kd*beta + kblue
+		
+	this.teapotMaterial = new THREE.ShaderMaterial({
+		uniforms: {
+		  lightpos: {type:'v3', value: new THREE.Vector3(0, 30, 20) },
+		  opacity: {type: 'f', value: 1.0},
+		  kcool: {type: 'v3', value: kcool},
+		  kwarm: {type: 'v3', value: kwarm},			  
+		},
+		vertexShader: document.getElementById('myVertextoonShader').textContent,
+		fragmentShader: document.getElementById('myFragmenttoonShader').textContent
+	 });
+	let mesh = new THREE.Mesh(new THREE.TeapotBufferGeometry(10), this.teapotMaterial);
+	mesh.position.set(25,55,-25)
+	return mesh;
+	teapotMaterial.transparent = true;
+}
+
+function buildModel() {
+	let geometry = new THREE.Geometry();
+	let sq11 = Math.sqrt(11);
+	geometry.vertices.push ( new THREE.Vector3(-5, 0, 5) );//0
+	geometry.vertices.push ( new THREE.Vector3( 5, 0, 5) );//1
+	geometry.vertices.push ( new THREE.Vector3( 5,12, 5) );//2
+	geometry.vertices.push ( new THREE.Vector3( 5, 12+sq11, 0) );//3
+	geometry.vertices.push ( new THREE.Vector3(-5, 12+sq11, 0) );//4
+	geometry.vertices.push ( new THREE.Vector3(-5, 12, 5) );//5
+	  
+	geometry.vertices.push ( new THREE.Vector3(5, 0, -5) );//6
+	geometry.vertices.push ( new THREE.Vector3(5, 12, -5) );//7
+	  
+	geometry.vertices.push ( new THREE.Vector3(-5, 0, -5) );//8
+	geometry.vertices.push ( new THREE.Vector3(-5, 12, -5) );//9
+	geometry.vertices.push ( new THREE.Vector3(-3, 13, 0) );//10
+	geometry.vertices.push ( new THREE.Vector3(3, 13, 0) );//11
+	geometry.vertices.push ( new THREE.Vector3(5, 17, 0) );//12
+	geometry.vertices.push ( new THREE.Vector3(-5, 17, 0) );//13
+		  
+	let face;
+	face = new THREE.Face3 ( 0, 1, 2 ); face.materialIndex = 0;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 0, 2, 5 ); face.materialIndex = 0;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 5, 2, 3 ); face.materialIndex = 1;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 5, 3, 4 ); face.materialIndex = 1;
+	geometry.faces.push (face);
+	  
+	face = new THREE.Face3 ( 1, 6, 7 ); face.materialIndex = 2;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 1, 7, 2 ); face.materialIndex = 2;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 2, 11, 3 ); face.materialIndex = 2;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 2, 7, 11 ); face.materialIndex = 2;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 7, 3, 11 ); face.materialIndex = 2;
+	geometry.faces.push (face);
+	  
+	face = new THREE.Face3 ( 6, 8, 9 ); face.materialIndex = 3;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 6, 9, 7 ); face.materialIndex = 3;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 7, 9, 4 ); face.materialIndex = 4;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 7, 4, 3 ); face.materialIndex = 4;
+	geometry.faces.push (face);
+	  
+	face = new THREE.Face3 ( 8, 0, 5 ); face.materialIndex = 5;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 8, 5, 9 ); face.materialIndex = 5;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 9, 10, 4 ); face.materialIndex = 5;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 9, 5, 10 ); face.materialIndex = 5;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 5, 4, 10 ); face.materialIndex = 5;
+	geometry.faces.push (face);
+	  
+ 	face = new THREE.Face3 ( 8, 6, 1 ); face.materialIndex = 6;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 8, 1, 0 ); face.materialIndex = 6;
+	geometry.faces.push (face);
+  
+	face = new THREE.Face3 ( 4, 3, 12 ); face.materialIndex = 7;
+	geometry.faces.push (face);
+	face = new THREE.Face3 ( 4, 12, 13 ); face.materialIndex = 7;
+	geometry.faces.push (face);
+
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,1), new THREE.Vector2(0,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,1), new THREE.Vector2(0,1) ]);
+  
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,0.75) ]);
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0.75), new THREE.Vector2(0,0.75) ]);
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0.75), new THREE.Vector2(0.5,1), new THREE.Vector2(0,1) ]);
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0.75), new THREE.Vector2(1,0.75), new THREE.Vector2(0.5,1) ]);
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(1,0.75), new THREE.Vector2(1,1), new THREE.Vector2(0.5,1) ]);
+  
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,1), new THREE.Vector2(0,1) ]);
+    geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,1), new THREE.Vector2(0,1) ]);
+  
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,0.75) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0.75), new THREE.Vector2(0,0.75) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0.75), new THREE.Vector2(0.5,1), new THREE.Vector2(0,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0.75), new THREE.Vector2(1,0.75), new THREE.Vector2(0.5,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(1,0.75), new THREE.Vector2(1,1), new THREE.Vector2(0.5,1) ]);
+  
+  
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,1), new THREE.Vector2(0,1) ]);
+	
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,0), new THREE.Vector2(1,1) ]);
+	geometry.faceVertexUvs[0].push ([new THREE.Vector2(0,0), new THREE.Vector2(1,1), new THREE.Vector2(0,1) ]);
+  
+	geometry.computeFaceNormals();
+    geometry.computeVertexNormals();
+  
+	let loader = new THREE.TextureLoader();
+	loader.crossOrigin = '';
+	materialArray = [];
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/QsynFoE.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/0IIv72S.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/FIL6VNX.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/QsynFoE.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/0IIv72S.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/FIL6VNX.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/enxP7ei.jpg')}))
+	materialArray.push(new THREE.MeshLambertMaterial({map: loader.load ('https://i.imgur.com/H7nKD0s.jpg'),side:THREE.DoubleSide}))
+	let tea = new THREE.Mesh(geometry,materialArray);
+	tea.position.set(30,47,20);
+	tea.name = "tea";
+	return tea; 
+}
+
+function unitize (object, targetSize) {  
+	
+	var box3 = new THREE.Box3();
+	box3.setFromObject (object);
+	var size = new THREE.Vector3();
+	size.subVectors (box3.max, box3.min);
+	var center = new THREE.Vector3();
+	center.addVectors(box3.max, box3.min).multiplyScalar (0.5);
+	
+	console.log ('center: ' + center.x + ', '+center.y + ', '+center.z );
+	console.log ('size: ' + size.x + ', ' +  size.y + ', '+size.z );
+	
+	var objSize = Math.max (size.x, size.y, size.z);
+	var scaleSet = targetSize/objSize;
+				
+	var theObject =  new THREE.Object3D();
+	theObject.add (object);
+	object.scale.set (scaleSet, scaleSet, scaleSet);
+	object.position.set (-center.x*scaleSet, -center.y*scaleSet, -center.z*scaleSet);
+	theObject.rotation.y = Math.PI/2;
+	return theObject;
+			
+} 
+
+function animate() {
+  angle += 0.01;
+  requestAnimationFrame(animate);
+  
+  var py = new THREE.Vector3(0,1,0);
+  var point = camera.position.clone().sub(subject.position).projectOnPlane(py);
+  var pz = new THREE.Vector3(0,0,1);
+  var angle0 = point.angleTo(pz);
+  var test = new THREE.Vector3();
+  
+  if(test.crossVectors(point,pz).dot(py)<0)
+  angle0 = -angle0;
+  
+  subject.rotation.y = angle0;
+  subjectClone.rotation.y = angle0;
+  
+  material_shh.uniforms.imageSize.value = 60;
+
+  renderer.setRenderTarget (renderTarget);
+  renderer.setClearColor (0x000000);
+  renderer.clear();
+  renderer.render (scene0, camera1); 
+  
+  renderer.setRenderTarget (renderTarget_whole);
+  renderer.setClearColor (0xffff00);
+  renderer.clear()
+  renderer.render (sceneRTT, cameraRTT);
+
+  renderer.render(sceneRegular, camera1);
+  
+  planeXX.lookAt (camera.position.x, 25, camera.position.z);
+  
+  renderer.setRenderTarget (null);
+  renderer.setClearColor (0x888888);
+  renderer.clear();
+  renderer.render (scene, camera);
+  
+  light.position.set (40*Math.cos(angle), 100, 40*Math.sin(angle));
+  teapotMaterial.uniforms.lightpos.value.copy(light.position);
+  light2.copy (light);
+  shaderMaterial.uniforms.lightpos.value.copy (light2.position);
+
+  renderer.setRenderTarget (renderTarget);
+  renderer.clear(); 
+  
+  sceneGrey.traverse(function (obj){
+	  if(obj instanceof THREE.Mesh){
+		if(Array.isArray(obj.material)){
+			obj.material.forEach(function(m){
+				m.colorWrite = true;
+			})
+		}else
+		obj.material.colorWrite = true;
+	  }
+  });
+  renderer.render(sceneGrey,camera);
+  renderer.setRenderTarget(null);
+  renderer.clearColor();	
+  renderer.render(scene, camera0);
+
+  sceneGrey.traverse ( function (obj) {
+  	if (obj instanceof THREE.Mesh){
+		if(Array.isArray(obj.material)){
+			obj.material.forEach(function(m){
+				m.colorWrite = false;
+			})
+		}else
+		obj.material.colorWrite = false;
+	}
+  });
+  renderer.render (sceneGrey, camera);
+
+  renderer.render(sceneColor, camera);
+  
+}
+
+function render() {
+  renderer.render(scene, camera);
+}
+</script>
+</body>
+
+</html>
